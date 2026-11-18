@@ -16,8 +16,6 @@ interface SettleUpPanelProps {
   expenses: Expense[];
   onRecordSettlement: (transfer: SettlementTransfer) => Promise<void>;
   onDeleteSettlement: (settlementId: string) => Promise<void>;
-  currentUserId: string;
-  tripOwnerId: string;
 }
 
 export function SettleUpPanel({
@@ -28,8 +26,6 @@ export function SettleUpPanel({
   expenses,
   onRecordSettlement,
   onDeleteSettlement,
-  currentUserId,
-  tripOwnerId,
 }: SettleUpPanelProps) {
   const [settlingKey, setSettlingKey] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
@@ -202,41 +198,35 @@ export function SettleUpPanel({
               Recorded Settlement Payments ({settlements.length})
             </h3>
             <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-              {settlements.map((s) => {
-                const canDelete =
-                  s.authorId === currentUserId || tripOwnerId === currentUserId;
-                return (
-                  <div
-                    key={s.id}
-                    className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="flex flex-wrap items-center gap-1.5 text-slate-700">
-                      <span className="font-mono tabular-nums text-slate-500">
-                        {s.settledDate}
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-medium text-slate-900">{s.fromPerson}</span>
-                      <span>paid</span>
-                      <span className="font-medium text-slate-900">{s.toPerson}</span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-mono tabular-nums font-medium text-emerald-700">
-                        {formatINR(s.amount)}
-                      </span>
-                      {canDelete && (
-                        <button
-                          type="button"
-                          onClick={() => onDeleteSettlement(s.id)}
-                          aria-label={`Remove settlement from ${s.fromPerson} to ${s.toPerson}`}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+              {settlements.map((s) => (
+                <div
+                  key={s.id}
+                  className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5 text-slate-700">
+                    <span className="font-mono tabular-nums text-slate-500">
+                      {s.settledDate}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-medium text-slate-900">{s.fromPerson}</span>
+                    <span>paid</span>
+                    <span className="font-medium text-slate-900">{s.toPerson}</span>
                   </div>
-                );
-              })}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono tabular-nums font-medium text-emerald-700">
+                      {formatINR(s.amount)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteSettlement(s.id)}
+                      aria-label={`Remove settlement from ${s.fromPerson} to ${s.toPerson}`}
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

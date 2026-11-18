@@ -1,32 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   addDoc,
-  arrayUnion,
   collection,
   deleteDoc,
   doc,
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
-  writeBatch,
 } from 'firebase/firestore';
 import {
   ArrowLeftRight,
-  LogOut,
   PlusCircle,
   Receipt,
   Users,
 } from 'lucide-react';
 import {
-  auth,
   db,
   handleFirestoreError,
   OperationType,
-  signInWithGoogle,
-  signOutUser,
   testConnection,
 } from './firebase';
 import { AddExpenseForm } from './components/AddExpenseForm';
@@ -48,16 +42,28 @@ import {
   formatINR,
 } from './utils/splitCalculator';
 
-function TripWorkspace() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(false);
-  const [signingIn, setSigningIn] = useState<boolean>(false);
-  const [authError, setAuthError] = useState<string>('');
+const DEFAULT_TRIP_ID = 'kerala-trip-2026';
+const TRIP_STORAGE_KEY = 'kerala_split_trip_id';
 
-  const [memberTrips, setMemberTrips] = useState<Trip[]>([]);
-  const [invitedTrips, setInvitedTrips] = useState<Trip[]>([]);
-  const [tripsLoaded, setTripsLoaded] = useState<boolean>(false);
-  const [activeTripId, setActiveTripId] = useState<string | null>(null);
+function resolveInitialTripId(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('trip')?.trim().replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (fromUrl) {
+      localStorage.setItem(TRIP_STORAGE_KEY, fromUrl);
+      return fromUrl;
+    }
+    const saved = localStorage.getItem(TRIP_STORAGE_KEY)?.trim().replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (saved) return saved;
+  } catch {
+    // ignore storage errors
+  }
+  return DEFAULT_TRIP_ID;
+}
+
+function TripWorkspace() {
+  const [tripId, setTripId] = useState<string>(resolveInitialTripId);
+  const [trip, setTrip] = useState<Trip | null>(null);
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expensesLoading, setExpensesLoading] = useState<boolean>(true);
@@ -67,156 +73,72 @@ function TripWorkspace() {
   const [mobileTab, setMobileTab] = useState<'log' | 'totals' | 'bills' | 'settle'>('log');
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showShareModal, setShowShareModal] = useState<boolean>(false);
-  const creatingDefaultTripRef = useRef<boolean>(false);
+
+  const creatingTripRef = useRef<boolean>(false);
   const addFormRef = useRef<HTMLDivElement | null>(null);
+
+  // Sync URL query param & localStorage when switching trip rooms
+  const handleSwitchTripCode = (newCode: string) => {
+    const clean = newCode.trim().replace(/[^a-zA-Z0-9_-]/g, '-') || DEFAULT_TRIP_ID;
+    creatingTripRef.current = false;
+    setTripId(clean);
+    try {
+      localStorage.setItem(TRIP_STORAGE_KEY, clean);
+      const url = new URL(window.location.href);
+      url.searchParams.set('trip', clean);
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // ignore URL/storage errors
+    }
+  };
 
   useEffect(() => {
     testConnection();
-    const unsub = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthReady(true);
-      if (!currentUser) {
-        setMemberTrips([]);
-        setInvitedTrips([]);
-        setTripsLoaded(false);
-        setActiveTripId(null);
-        setExpenses([]);
-        setSettlements([]);
-      }
-    });
-    return () => unsub();
   }, []);
 
-  // Listen to trips where user is owner/member
+  // Listen to active trip doc and auto-create it if it doesn't exist yet
   useEffect(() => {
-    if (!authReady || !user || !user.emailVerified) return;
+    const tripDocPath = `trips/${tripId}`;
+    const tripRef = doc(db, 'trips', tripId);
 
-    const tripsPath = 'trips';
-    const memberQ = query(
-      collection(db, tripsPath),
-      where('memberUids', 'array-contains', user.uid)
-    );
-
-    const unsubMember = onSnapshot(
-      memberQ,
-      (snapshot) => {
-        const list: Trip[] = snapshot.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
+    const unsubTrip = onSnapshot(
+      tripRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setTrip({
+            id: snap.id,
             name: String(data.name || 'Kerala Trip'),
             destination: String(data.destination || 'Kerala'),
-            ownerId: String(data.ownerId || ''),
-            memberUids: Array.isArray(data.memberUids) ? data.memberUids : [],
-            invitedEmails: Array.isArray(data.invitedEmails) ? data.invitedEmails : [],
             travelers:
               Array.isArray(data.travelers) && data.travelers.length > 0
                 ? data.travelers
                 : DEFAULT_TRAVELERS,
             createdAt: data.createdAt ?? null,
             updatedAt: data.updatedAt ?? null,
-          };
-        });
-        setMemberTrips(list);
-        setTripsLoaded(true);
+          });
+        } else if (!creatingTripRef.current) {
+          creatingTripRef.current = true;
+          setDoc(tripRef, {
+            name: 'Kerala Trip',
+            destination: 'Kerala',
+            travelers: DEFAULT_TRAVELERS,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }).catch((err) => {
+            creatingTripRef.current = false;
+            handleFirestoreError(err, OperationType.CREATE, tripDocPath);
+          });
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, tripsPath)
+      (err) => handleFirestoreError(err, OperationType.GET, tripDocPath)
     );
 
-    let unsubInvited: (() => void) | null = null;
-    if (user.email) {
-      const invitedQ = query(
-        collection(db, tripsPath),
-        where('invitedEmails', 'array-contains', user.email.toLowerCase())
-      );
-      unsubInvited = onSnapshot(
-        invitedQ,
-        (snapshot) => {
-          const list: Trip[] = snapshot.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              name: String(data.name || 'Kerala Trip'),
-              destination: String(data.destination || 'Kerala'),
-              ownerId: String(data.ownerId || ''),
-              memberUids: Array.isArray(data.memberUids) ? data.memberUids : [],
-              invitedEmails: Array.isArray(data.invitedEmails) ? data.invitedEmails : [],
-              travelers:
-                Array.isArray(data.travelers) && data.travelers.length > 0
-                  ? data.travelers
-                  : DEFAULT_TRAVELERS,
-              createdAt: data.createdAt ?? null,
-              updatedAt: data.updatedAt ?? null,
-            };
-          });
-          setInvitedTrips(list);
-        },
-        (err) => handleFirestoreError(err, OperationType.LIST, tripsPath)
-      );
-    }
-
-    return () => {
-      unsubMember();
-      if (unsubInvited) unsubInvited();
-    };
-  }, [authReady, user]);
-
-  // Auto-provision Kerala Trip if user has no trips and no pending invites
-  useEffect(() => {
-    if (!authReady || !user || !user.emailVerified || !tripsLoaded) return;
-
-    if (memberTrips.length > 0) {
-      if (!activeTripId || !memberTrips.some((t) => t.id === activeTripId)) {
-        setActiveTripId(memberTrips[0].id);
-      }
-      return;
-    }
-
-    if (invitedTrips.length === 0 && !creatingDefaultTripRef.current) {
-      creatingDefaultTripRef.current = true;
-      addDoc(collection(db, 'trips'), {
-        name: 'Kerala Trip',
-        destination: 'Kerala',
-        ownerId: user.uid,
-        memberUids: [user.uid],
-        invitedEmails: [],
-        travelers: DEFAULT_TRAVELERS,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-        .then((docRef) => {
-          setActiveTripId(docRef.id);
-        })
-        .catch((err) => {
-          creatingDefaultTripRef.current = false;
-          handleFirestoreError(err, OperationType.CREATE, 'trips');
-        });
-    }
-  }, [authReady, user, tripsLoaded, memberTrips, invitedTrips, activeTripId]);
-
-  const activeTrip = useMemo(() => {
-    return memberTrips.find((t) => t.id === activeTripId) || memberTrips[0] || null;
-  }, [memberTrips, activeTripId]);
-
-  const pendingInvites = useMemo(() => {
-    if (!user) return [];
-    return invitedTrips.filter((t) => !t.memberUids.includes(user.uid));
-  }, [invitedTrips, user]);
-
-  // Listen to expenses and settlements for activeTrip
-  useEffect(() => {
-    if (!user || !user.emailVerified || !activeTrip) {
-      setExpenses([]);
-      setSettlements([]);
-      setExpensesLoading(false);
-      return;
-    }
-
     setExpensesLoading(true);
-    const expensesPath = `trips/${activeTrip.id}/expenses`;
+    const expensesPath = `trips/${tripId}/expenses`;
     const expQ = query(
       collection(db, expensesPath),
-      where('tripMemberUids', 'array-contains', user.uid)
+      where('tripId', '==', tripId)
     );
 
     const unsubExp = onSnapshot(
@@ -226,12 +148,7 @@ function TripWorkspace() {
           const data = d.data();
           return {
             id: d.id,
-            tripId: String(data.tripId || activeTrip.id),
-            tripOwnerId: String(data.tripOwnerId || activeTrip.ownerId),
-            tripMemberUids: Array.isArray(data.tripMemberUids)
-              ? data.tripMemberUids
-              : activeTrip.memberUids,
-            authorId: String(data.authorId || ''),
+            tripId: String(data.tripId || tripId),
             paidBy: String(data.paidBy || ''),
             amount: Number(data.amount || 0),
             reason: String(data.reason || 'Other'),
@@ -249,10 +166,10 @@ function TripWorkspace() {
       (err) => handleFirestoreError(err, OperationType.LIST, expensesPath)
     );
 
-    const settlementsPath = `trips/${activeTrip.id}/settlements`;
+    const settlementsPath = `trips/${tripId}/settlements`;
     const setQ = query(
       collection(db, settlementsPath),
-      where('tripMemberUids', 'array-contains', user.uid)
+      where('tripId', '==', tripId)
     );
 
     const unsubSet = onSnapshot(
@@ -262,12 +179,7 @@ function TripWorkspace() {
           const data = d.data();
           return {
             id: d.id,
-            tripId: String(data.tripId || activeTrip.id),
-            tripOwnerId: String(data.tripOwnerId || activeTrip.ownerId),
-            tripMemberUids: Array.isArray(data.tripMemberUids)
-              ? data.tripMemberUids
-              : activeTrip.memberUids,
-            authorId: String(data.authorId || ''),
+            tripId: String(data.tripId || tripId),
             fromPerson: String(data.fromPerson || ''),
             toPerson: String(data.toPerson || ''),
             amount: Number(data.amount || 0),
@@ -283,12 +195,13 @@ function TripWorkspace() {
     );
 
     return () => {
+      unsubTrip();
       unsubExp();
       unsubSet();
     };
-  }, [user, activeTrip]);
+  }, [tripId]);
 
-  const travelers = activeTrip?.travelers || DEFAULT_TRAVELERS;
+  const travelers = trip?.travelers || DEFAULT_TRAVELERS;
 
   const summaries = useMemo(
     () => computePersonSummaries(travelers, expenses, settlements),
@@ -312,34 +225,6 @@ function TripWorkspace() {
     [transfers]
   );
 
-  const handleSignIn = async () => {
-    setSigningIn(true);
-    setAuthError('');
-    try {
-      await signInWithGoogle();
-    } catch (err) {
-      setAuthError(
-        err instanceof Error ? err.message : 'Unable to sign in with Google.'
-      );
-    } finally {
-      setSigningIn(false);
-    }
-  };
-
-  const handleJoinTrip = async (trip: Trip) => {
-    if (!user) return;
-    const tripPath = `trips/${trip.id}`;
-    try {
-      await updateDoc(doc(db, 'trips', trip.id), {
-        memberUids: arrayUnion(user.uid),
-        updatedAt: serverTimestamp(),
-      });
-      setActiveTripId(trip.id);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, tripPath);
-    }
-  };
-
   const handleSaveExpense = async (payload: {
     paidBy: string;
     amount: number;
@@ -348,12 +233,10 @@ function TripWorkspace() {
     splitAmong: string[];
     expenseDate: string;
   }) => {
-    if (!user || !activeTrip) return;
-
     if (editingExpense) {
-      const expPath = `trips/${activeTrip.id}/expenses/${editingExpense.id}`;
+      const expPath = `trips/${tripId}/expenses/${editingExpense.id}`;
       try {
-        await updateDoc(doc(db, 'trips', activeTrip.id, 'expenses', editingExpense.id), {
+        await updateDoc(doc(db, 'trips', tripId, 'expenses', editingExpense.id), {
           paidBy: payload.paidBy,
           amount: payload.amount,
           reason: payload.reason,
@@ -369,13 +252,10 @@ function TripWorkspace() {
       return;
     }
 
-    const expColPath = `trips/${activeTrip.id}/expenses`;
+    const expColPath = `trips/${tripId}/expenses`;
     try {
-      await addDoc(collection(db, 'trips', activeTrip.id, 'expenses'), {
-        tripId: activeTrip.id,
-        tripOwnerId: activeTrip.ownerId,
-        tripMemberUids: activeTrip.memberUids,
-        authorId: user.uid,
+      await addDoc(collection(db, 'trips', tripId, 'expenses'), {
+        tripId,
         paidBy: payload.paidBy,
         amount: payload.amount,
         reason: payload.reason,
@@ -391,10 +271,9 @@ function TripWorkspace() {
   };
 
   const handleDeleteExpense = async (expenseId: string) => {
-    if (!activeTrip) return;
-    const expPath = `trips/${activeTrip.id}/expenses/${expenseId}`;
+    const expPath = `trips/${tripId}/expenses/${expenseId}`;
     try {
-      await deleteDoc(doc(db, 'trips', activeTrip.id, 'expenses', expenseId));
+      await deleteDoc(doc(db, 'trips', tripId, 'expenses', expenseId));
       if (editingExpense?.id === expenseId) {
         setEditingExpense(null);
       }
@@ -404,16 +283,12 @@ function TripWorkspace() {
   };
 
   const handleRecordSettlement = async (transfer: SettlementTransfer) => {
-    if (!user || !activeTrip) return;
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const setColPath = `trips/${activeTrip.id}/settlements`;
+    const setColPath = `trips/${tripId}/settlements`;
     try {
-      await addDoc(collection(db, 'trips', activeTrip.id, 'settlements'), {
-        tripId: activeTrip.id,
-        tripOwnerId: activeTrip.ownerId,
-        tripMemberUids: activeTrip.memberUids,
-        authorId: user.uid,
+      await addDoc(collection(db, 'trips', tripId, 'settlements'), {
+        tripId,
         fromPerson: transfer.from,
         toPerson: transfer.to,
         amount: transfer.amount,
@@ -428,10 +303,9 @@ function TripWorkspace() {
   };
 
   const handleDeleteSettlement = async (settlementId: string) => {
-    if (!activeTrip) return;
-    const setPath = `trips/${activeTrip.id}/settlements/${settlementId}`;
+    const setPath = `trips/${tripId}/settlements/${settlementId}`;
     try {
-      await deleteDoc(doc(db, 'trips', activeTrip.id, 'settlements', settlementId));
+      await deleteDoc(doc(db, 'trips', tripId, 'settlements', settlementId));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, setPath);
     }
@@ -439,15 +313,12 @@ function TripWorkspace() {
 
   const handleUpdateTrip = async (updates: {
     name: string;
-    invitedEmails: string[];
     travelers: string[];
   }) => {
-    if (!activeTrip) return;
-    const tripPath = `trips/${activeTrip.id}`;
+    const tripPath = `trips/${tripId}`;
     try {
-      await updateDoc(doc(db, 'trips', activeTrip.id), {
+      await updateDoc(doc(db, 'trips', tripId), {
         name: updates.name,
-        invitedEmails: updates.invitedEmails,
         travelers: updates.travelers,
         updatedAt: serverTimestamp(),
       });
@@ -455,38 +326,6 @@ function TripWorkspace() {
       handleFirestoreError(err, OperationType.UPDATE, tripPath);
     }
   };
-
-  // Sync memberUids to existing expenses/settlements when owner opens trip after a collaborator joins
-  useEffect(() => {
-    if (!user || !activeTrip || activeTrip.ownerId !== user.uid) return;
-    const staleExpenses = expenses.filter(
-      (e) =>
-        e.tripMemberUids.length !== activeTrip.memberUids.length ||
-        !activeTrip.memberUids.every((uid) => e.tripMemberUids.includes(uid))
-    );
-    const staleSettlements = settlements.filter(
-      (s) =>
-        s.tripMemberUids.length !== activeTrip.memberUids.length ||
-        !activeTrip.memberUids.every((uid) => s.tripMemberUids.includes(uid))
-    );
-
-    if (staleExpenses.length === 0 && staleSettlements.length === 0) return;
-
-    const batch = writeBatch(db);
-    for (const e of staleExpenses.slice(0, 200)) {
-      batch.update(doc(db, 'trips', activeTrip.id, 'expenses', e.id), {
-        tripMemberUids: activeTrip.memberUids,
-        updatedAt: serverTimestamp(),
-      });
-    }
-    for (const s of staleSettlements.slice(0, 200)) {
-      batch.update(doc(db, 'trips', activeTrip.id, 'settlements', s.id), {
-        tripMemberUids: activeTrip.memberUids,
-        updatedAt: serverTimestamp(),
-      });
-    }
-    batch.commit().catch((err) => console.error('Member sync failed:', err));
-  }, [user, activeTrip, expenses, settlements]);
 
   const scrollToAddForm = () => {
     addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -497,85 +336,11 @@ function TripWorkspace() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (!authReady) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="text-sm text-slate-500">Loading Kerala Split...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-8">
-            <span className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0">
-              Kerala Split
-            </span>
-            <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-              <span className="whitespace-nowrap shrink-0">Bill Entry</span>
-              <span className="whitespace-nowrap shrink-0">Individual Totals</span>
-              <span className="whitespace-nowrap shrink-0">Split Calculator</span>
-            </nav>
-            <button
-              type="button"
-              onClick={handleSignIn}
-              disabled={signingIn}
-              className="px-4 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap shrink-0"
-            >
-              {signingIn ? 'Signing in...' : 'Sign In'}
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 flex items-center justify-center px-6 py-12">
-          <div className="max-w-lg w-full bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-6">
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-emerald-700">
-                Kerala Group Trip · 8 Travelers
-              </p>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 text-balance">
-                Track every trip bill and split fairly at the end.
-              </h1>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Pre-loaded with your crew so anyone can log who paid, pick a reason from the list, and inspect individual totals in real time.
-              </p>
-            </div>
-
-            <div className="border-t border-b border-slate-100 py-4 space-y-2">
-              <p className="text-xs font-medium text-slate-500">Trip Crew Included</p>
-              <p className="text-sm font-medium text-slate-800 leading-relaxed">
-                {DEFAULT_TRAVELERS.join(' · ')}
-              </p>
-            </div>
-
-            {authError && (
-              <div className="px-3.5 py-2.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg">
-                {authError}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleSignIn}
-              disabled={signingIn}
-              className="w-full px-5 py-3 text-sm font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors"
-            >
-              {signingIn ? 'Opening Google Sign-In...' : 'Continue with Google to Open Ledger'}
-            </button>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Bar Contract: Exact 3 Zones (non-sticky on mobile to respect 15% sticky cap) */}
+      {/* Top Bar Contract: Exact 3 Zones */}
       <header className="md:sticky md:top-0 z-30 bg-white border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 sm:gap-8">
-          {/* Zone 1: Single-line Brand Wordmark */}
           <a
             href="#top"
             className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
@@ -583,7 +348,6 @@ function TripWorkspace() {
             Kerala Split
           </a>
 
-          {/* Zone 2: Clean single-line text navigation links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
             <a
               href="#log-bill"
@@ -611,7 +375,6 @@ function TripWorkspace() {
             </a>
           </nav>
 
-          {/* Zone 3: Primary Action */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
@@ -625,62 +388,23 @@ function TripWorkspace() {
         </div>
       </header>
 
-      <main id="top" className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-5 pb-24 md:py-8 space-y-5 sm:space-y-6">
-        {/* Pending Shared Trip Invites */}
-        {pendingInvites.length > 0 && (
-          <div className="bg-white border border-emerald-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="text-sm text-slate-800">
-              You were invited to collaborate on{' '}
-              <strong>{pendingInvites[0].name}</strong>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleJoinTrip(pendingInvites[0])}
-              className="min-h-[44px] sm:min-h-[36px] px-4 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors whitespace-nowrap self-start sm:self-auto"
-            >
-              Join Shared Trip
-            </button>
-          </div>
-        )}
-
-        {/* Trip Context Header & Account Switcher */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4">
+      <main
+        id="top"
+        className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-5 pb-24 md:py-8 space-y-5 sm:space-y-6"
+      >
+        {/* Trip Context Header */}
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 sm:gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-1">
-              <span>{activeTrip?.destination || 'Kerala'}</span>
+              <span>{trip?.destination || 'Kerala'}</span>
               <span aria-hidden="true">·</span>
               <span>{travelers.length} travelers</span>
               <span aria-hidden="true">·</span>
-              <span className="truncate max-w-[180px] sm:max-w-none">{user.email}</span>
+              <span className="font-mono">Room: {tripId}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              {activeTrip?.name || 'Kerala Trip'}
+              {trip?.name || 'Kerala Trip'}
             </h1>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {memberTrips.length > 1 && (
-              <select
-                value={activeTrip?.id || ''}
-                onChange={(e) => setActiveTripId(e.target.value)}
-                aria-label="Select trip"
-                className="min-h-[40px] sm:min-h-[34px] px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700"
-              >
-                {memberTrips.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              type="button"
-              onClick={signOutUser}
-              className="min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
           </div>
         </div>
 
@@ -779,8 +503,6 @@ function TripWorkspace() {
                 scrollToAddForm();
               }
             }}
-            currentUserId={user.uid}
-            tripOwnerId={activeTrip?.ownerId || ''}
           />
         </section>
 
@@ -790,15 +512,13 @@ function TripWorkspace() {
           className={mobileTab === 'settle' ? 'block' : 'hidden md:block'}
         >
           <SettleUpPanel
-            tripName={activeTrip?.name || 'Kerala Trip'}
+            tripName={trip?.name || 'Kerala Trip'}
             summaries={summaries}
             transfers={transfers}
             settlements={settlements}
             expenses={expenses}
             onRecordSettlement={handleRecordSettlement}
             onDeleteSettlement={handleDeleteSettlement}
-            currentUserId={user.uid}
-            tripOwnerId={activeTrip?.ownerId || ''}
           />
         </section>
       </main>
@@ -864,12 +584,19 @@ function TripWorkspace() {
         </div>
       </nav>
 
-      {showShareModal && activeTrip && (
+      {showShareModal && (
         <ShareTripModal
-          trip={activeTrip}
-          isOwner={activeTrip.ownerId === user.uid}
+          trip={
+            trip || {
+              id: tripId,
+              name: 'Kerala Trip',
+              destination: 'Kerala',
+              travelers: DEFAULT_TRAVELERS,
+            }
+          }
           onClose={() => setShowShareModal(false)}
           onUpdateTrip={handleUpdateTrip}
+          onSwitchTripCode={handleSwitchTripCode}
         />
       )}
     </div>

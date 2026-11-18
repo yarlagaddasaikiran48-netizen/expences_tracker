@@ -1,49 +1,41 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Check, Copy, Plus, X } from 'lucide-react';
 import type { Trip } from '../types/trip';
 
 interface ShareTripModalProps {
   trip: Trip;
-  isOwner: boolean;
   onClose: () => void;
   onUpdateTrip: (updates: {
     name: string;
-    invitedEmails: string[];
     travelers: string[];
   }) => Promise<void>;
+  onSwitchTripCode: (newCode: string) => void;
 }
 
 export function ShareTripModal({
   trip,
-  isOwner,
   onClose,
   onUpdateTrip,
+  onSwitchTripCode,
 }: ShareTripModalProps) {
   const [tripName, setTripName] = useState(trip.name);
-  const [invitedEmails, setInvitedEmails] = useState<string[]>(trip.invitedEmails);
-  const [emailInput, setEmailInput] = useState('');
   const [travelers, setTravelers] = useState<string[]>(trip.travelers);
   const [travelerInput, setTravelerInput] = useState('');
+  const [tripCodeInput, setTripCodeInput] = useState(trip.id);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const handleAddEmail = () => {
-    const clean = emailInput.trim().toLowerCase();
-    if (!clean || !clean.includes('@')) {
-      setError('Enter a valid Gmail/email address.');
-      return;
+  const shareUrl = `${window.location.origin}/?trip=${encodeURIComponent(trip.id)}`;
+
+  const handleCopyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      // ignore clipboard errors
     }
-    if (invitedEmails.includes(clean)) {
-      setEmailInput('');
-      return;
-    }
-    if (invitedEmails.length >= 20) {
-      setError('Maximum 20 collaborator emails allowed.');
-      return;
-    }
-    setError('');
-    setInvitedEmails([...invitedEmails, clean]);
-    setEmailInput('');
   };
 
   const handleAddTraveler = () => {
@@ -62,6 +54,16 @@ export function ShareTripModal({
     setTravelerInput('');
   };
 
+  const handleSwitchCode = () => {
+    const clean = tripCodeInput.trim().replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (!clean) {
+      setError('Enter a valid trip code (letters, numbers, hyphens).');
+      return;
+    }
+    onSwitchTripCode(clean.slice(0, 64));
+    onClose();
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tripName.trim()) {
@@ -77,7 +79,6 @@ export function ShareTripModal({
     try {
       await onUpdateTrip({
         name: tripName.trim().slice(0, 80),
-        invitedEmails,
         travelers,
       });
       onClose();
@@ -99,7 +100,7 @@ export function ShareTripModal({
         <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5" />
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <h2 id="trip-settings-title" className="text-base font-semibold text-slate-900">
-            Trip Settings & Collaborators
+            Trip Crew & Share Link
           </h2>
           <button
             type="button"
@@ -112,6 +113,43 @@ export function ShareTripModal({
         </div>
 
         <form onSubmit={handleSave} className="p-5 space-y-5 max-h-[82vh] overflow-y-auto">
+          {/* Share Link */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-2">
+            <div className="text-xs font-medium text-slate-700">
+              Share with Friends (No Login Required)
+            </div>
+            <p className="text-xs text-slate-500">
+              Send this link in WhatsApp. Everyone who opens it sees and updates the same live Kerala trip bills.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={shareUrl}
+                aria-label="Share link"
+                className="flex-1 min-h-[40px] px-3 py-1.5 text-xs font-mono text-slate-600 bg-white border border-slate-200 rounded-lg"
+              />
+              <button
+                type="button"
+                onClick={handleCopyShareLink}
+                className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors whitespace-nowrap"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Link</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Trip Name */}
           <div>
             <label htmlFor="trip-name-input" className="block text-xs font-medium text-slate-700 mb-1.5">
               Trip Name
@@ -121,9 +159,8 @@ export function ShareTripModal({
               type="text"
               value={tripName}
               onChange={(e) => setTripName(e.target.value)}
-              disabled={!isOwner}
               maxLength={80}
-              className="w-full min-h-[44px] px-3 py-2 text-base sm:text-sm bg-slate-50 border border-slate-200 rounded-lg disabled:opacity-60 focus:outline-none focus:bg-white focus:border-emerald-600"
+              className="w-full min-h-[44px] px-3 py-2 text-base sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-emerald-600"
             />
           </div>
 
@@ -139,7 +176,7 @@ export function ShareTripModal({
                   className="min-h-[40px] px-2.5 py-1.5 text-xs font-medium text-slate-800 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-1"
                 >
                   <span className="truncate">{t}</span>
-                  {isOwner && travelers.length > 1 && (
+                  {travelers.length > 1 && (
                     <button
                       type="button"
                       onClick={() => setTravelers(travelers.filter((x) => x !== t))}
@@ -152,82 +189,52 @@ export function ShareTripModal({
                 </div>
               ))}
             </div>
-            {isOwner && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={travelerInput}
-                  onChange={(e) => setTravelerInput(e.target.value)}
-                  placeholder="Add traveler name"
-                  maxLength={50}
-                  className="flex-1 min-h-[44px] sm:min-h-[36px] px-3 py-2 sm:py-1.5 text-base sm:text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-emerald-600"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddTraveler}
-                  className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-4 sm:px-3 py-2 sm:py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add
-                </button>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={travelerInput}
+                onChange={(e) => setTravelerInput(e.target.value)}
+                placeholder="Add traveler name"
+                maxLength={50}
+                className="flex-1 min-h-[44px] sm:min-h-[36px] px-3 py-2 sm:py-1.5 text-base sm:text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-emerald-600"
+              />
+              <button
+                type="button"
+                onClick={handleAddTraveler}
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-4 sm:px-3 py-2 sm:py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add
+              </button>
+            </div>
           </div>
 
-          {/* Collaborator Emails */}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Share Live Access via Google Email
+          {/* Switch / Create Trip Room Code */}
+          <div className="border-t border-slate-100 pt-4">
+            <label htmlFor="trip-code-input" className="block text-xs font-medium text-slate-700 mb-1">
+              Trip Room Code
             </label>
             <p className="text-xs text-slate-500 mb-2">
-              Friends whose email is added here can sign in with Google on their own phones to view and add bills.
+              Switch to a different trip ledger or create a fresh one by entering a new code.
             </p>
-            {isOwner && (
-              <div className="flex gap-2 mb-2.5">
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="friend@gmail.com"
-                  className="flex-1 min-h-[44px] sm:min-h-[36px] px-3 py-2 sm:py-1.5 text-base sm:text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-emerald-600"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddEmail}
-                  className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-4 sm:px-3 py-2 sm:py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Invite
-                </button>
-              </div>
-            )}
-
-            {invitedEmails.length > 0 ? (
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-                {invitedEmails.map((email) => (
-                  <div
-                    key={email}
-                    className="px-3 py-2 flex items-center justify-between text-xs text-slate-700"
-                  >
-                    <span className="truncate">{email}</span>
-                    {isOwner && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setInvitedEmails(invitedEmails.filter((x) => x !== email))
-                        }
-                        aria-label={`Remove ${email}`}
-                        className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-rose-600"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400">No external emails invited yet.</p>
-            )}
+            <div className="flex gap-2">
+              <input
+                id="trip-code-input"
+                type="text"
+                value={tripCodeInput}
+                onChange={(e) => setTripCodeInput(e.target.value)}
+                placeholder="kerala-trip-2026"
+                maxLength={64}
+                className="flex-1 min-h-[44px] sm:min-h-[36px] px-3 py-2 sm:py-1.5 text-base sm:text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-emerald-600"
+              />
+              <button
+                type="button"
+                onClick={handleSwitchCode}
+                className="min-h-[44px] sm:min-h-[36px] px-4 sm:px-3 py-2 sm:py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap"
+              >
+                Open Room
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -244,15 +251,13 @@ export function ShareTripModal({
             >
               Close
             </button>
-            {isOwner && (
-              <button
-                type="submit"
-                disabled={saving}
-                className="min-h-[44px] sm:min-h-[36px] px-4 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors"
-              >
-                {saving ? 'Saving...' : 'Save Settings'}
-              </button>
-            )}
+            <button
+              type="submit"
+              disabled={saving}
+              className="min-h-[44px] sm:min-h-[36px] px-4 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors"
+            >
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
           </div>
         </form>
       </div>

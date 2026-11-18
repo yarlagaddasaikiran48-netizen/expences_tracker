@@ -12,8 +12,6 @@ interface ExpenseLedgerTableProps {
   onEditExpense: (expense: Expense) => void;
   onDeleteExpense: (expenseId: string) => Promise<void>;
   onFocusAddForm: () => void;
-  currentUserId: string;
-  tripOwnerId: string;
 }
 
 export function ExpenseLedgerTable({
@@ -25,8 +23,6 @@ export function ExpenseLedgerTable({
   onEditExpense,
   onDeleteExpense,
   onFocusAddForm,
-  currentUserId,
-  tripOwnerId,
 }: ExpenseLedgerTableProps) {
   const [reasonFilter, setReasonFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -242,8 +238,6 @@ export function ExpenseLedgerTable({
           {/* Mobile Stacked Card Rows (< sm) */}
           <div className="sm:hidden divide-y divide-slate-100">
             {filteredExpenses.map((exp) => {
-              const canModify =
-                exp.authorId === currentUserId || tripOwnerId === currentUserId;
               const splitCount = exp.splitAmong.length;
               const isAllSplit = splitCount === travelers.length;
               const splitLabel = isAllSplit
@@ -275,48 +269,46 @@ export function ExpenseLedgerTable({
                       <span> · {splitLabel}</span>
                     </div>
 
-                    {canModify && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        {confirmDeleteId === exp.id ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled={deletingId === exp.id}
-                              onClick={() => handleConfirmDelete(exp.id)}
-                              className="min-h-[40px] px-3 py-1.5 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors"
-                            >
-                              {deletingId === exp.id ? '...' : 'Confirm'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="min-h-[40px] px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-lg transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => onEditExpense(exp)}
-                              aria-label={`Edit ${exp.reason} paid by ${exp.paidBy}`}
-                              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(exp.id)}
-                              aria-label={`Delete ${exp.reason} paid by ${exp.paidBy}`}
-                              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-500 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {confirmDeleteId === exp.id ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={deletingId === exp.id}
+                            onClick={() => handleConfirmDelete(exp.id)}
+                            className="min-h-[40px] px-3 py-1.5 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors"
+                          >
+                            {deletingId === exp.id ? '...' : 'Confirm'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="min-h-[40px] px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onEditExpense(exp)}
+                            aria-label={`Edit ${exp.reason} paid by ${exp.paidBy}`}
+                            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(exp.id)}
+                            aria-label={`Delete ${exp.reason} paid by ${exp.paidBy}`}
+                            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-500 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -338,8 +330,6 @@ export function ExpenseLedgerTable({
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {filteredExpenses.map((exp) => {
-                  const canModify =
-                    exp.authorId === currentUserId || tripOwnerId === currentUserId;
                   const splitCount = exp.splitAmong.length;
                   const isAllSplit = splitCount === travelers.length;
                   const splitLabel = isAllSplit
@@ -371,48 +361,46 @@ export function ExpenseLedgerTable({
                         {formatINR(exp.amount)}
                       </td>
                       <td className="py-3 px-4 sm:px-5 text-right whitespace-nowrap">
-                        {canModify && (
-                          <div className="inline-flex items-center justify-end gap-1">
-                            {confirmDeleteId === exp.id ? (
-                              <>
-                                <button
-                                  type="button"
-                                  disabled={deletingId === exp.id}
-                                  onClick={() => handleConfirmDelete(exp.id)}
-                                  className="px-2 py-1 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors"
-                                >
-                                  {deletingId === exp.id ? '...' : 'Confirm'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(null)}
-                                  className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => onEditExpense(exp)}
-                                  aria-label={`Edit ${exp.reason} paid by ${exp.paidBy}`}
-                                  className="p-1.5 text-slate-400 hover:text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(exp.id)}
-                                  aria-label={`Delete ${exp.reason} paid by ${exp.paidBy}`}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-colors"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
+                        <div className="inline-flex items-center justify-end gap-1">
+                          {confirmDeleteId === exp.id ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={deletingId === exp.id}
+                                onClick={() => handleConfirmDelete(exp.id)}
+                                className="px-2 py-1 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors"
+                              >
+                                {deletingId === exp.id ? '...' : 'Confirm'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onEditExpense(exp)}
+                                aria-label={`Edit ${exp.reason} paid by ${exp.paidBy}`}
+                                className="p-1.5 text-slate-400 hover:text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(exp.id)}
+                                aria-label={`Delete ${exp.reason} paid by ${exp.paidBy}`}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

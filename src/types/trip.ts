@@ -28,9 +28,6 @@ export interface Trip {
   id: string;
   name: string;
   destination: string;
-  ownerId: string;
-  memberUids: string[];
-  invitedEmails: string[];
   travelers: string[];
   createdAt?: Timestamp | null;
   updatedAt?: Timestamp | null;
@@ -39,9 +36,6 @@ export interface Trip {
 export interface Expense {
   id: string;
   tripId: string;
-  tripOwnerId: string;
-  tripMemberUids: string[];
-  authorId: string;
   paidBy: string;
   amount: number;
   reason: string;
@@ -55,9 +49,6 @@ export interface Expense {
 export interface SettlementRecord {
   id: string;
   tripId: string;
-  tripOwnerId: string;
-  tripMemberUids: string[];
-  authorId: string;
   fromPerson: string;
   toPerson: string;
   amount: number;

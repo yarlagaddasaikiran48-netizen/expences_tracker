@@ -2,35 +2,20 @@
   "entities": {
     "Trip": {
       "title": "Trip",
-      "description": "A shared group trip expense ledger containing travelers and authorized collaborators.",
+      "description": "A shared group trip expense ledger containing travelers.",
       "type": "object",
       "properties": {
         "name": {
           "type": "string",
           "minLength": 1,
           "maxLength": 80,
-          "description": "Display name of the trip (e.g. Kerala Trip 2026)."
+          "description": "Display name of the trip (e.g. Kerala Trip)."
         },
         "destination": {
           "type": "string",
           "minLength": 1,
           "maxLength": 80,
           "description": "Destination of the trip."
-        },
-        "ownerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "UID of the user who created the trip."
-        },
-        "memberUids": {
-          "type": "array",
-          "description": "Bounded list of collaborator UIDs (max 20)."
-        },
-        "invitedEmails": {
-          "type": "array",
-          "description": "Bounded list of invited collaborator email addresses (max 20)."
         },
         "travelers": {
           "type": "array",
@@ -50,9 +35,6 @@
       "required": [
         "name",
         "destination",
-        "ownerId",
-        "memberUids",
-        "invitedEmails",
         "travelers",
         "createdAt",
         "updatedAt"
@@ -69,24 +51,6 @@
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Parent trip document ID."
-        },
-        "tripOwnerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Owner UID copied from parent trip for secure list queries."
-        },
-        "tripMemberUids": {
-          "type": "array",
-          "description": "Bounded list of collaborator UIDs synced from parent trip (max 20)."
-        },
-        "authorId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "UID of the user who logged the expense."
         },
         "paidBy": {
           "type": "string",
@@ -134,9 +98,6 @@
       },
       "required": [
         "tripId",
-        "tripOwnerId",
-        "tripMemberUids",
-        "authorId",
         "paidBy",
         "amount",
         "reason",
@@ -153,21 +114,6 @@
       "type": "object",
       "properties": {
         "tripId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
-        },
-        "tripOwnerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
-        },
-        "tripMemberUids": {
-          "type": "array"
-        },
-        "authorId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
@@ -208,9 +154,6 @@
       },
       "required": [
         "tripId",
-        "tripOwnerId",
-        "tripMemberUids",
-        "authorId",
         "fromPerson",
         "toPerson",
         "amount",
@@ -224,7 +167,7 @@
   "firestore": {
     "/trips/{tripId}": {
       "schema": { "$ref": "#/entities/Trip" },
-      "description": "Shared Kerala trip ledger configuration and authorized collaborator list."
+      "description": "Shared Kerala trip ledger configuration."
     },
     "/trips/{tripId}/expenses/{expenseId}": {
       "schema": { "$ref": "#/entities/Expense" },
