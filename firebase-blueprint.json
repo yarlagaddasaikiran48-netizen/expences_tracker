@@ -42,7 +42,7 @@
     },
     "Expense": {
       "title": "Expense",
-      "description": "An individual bill paid during the trip and split among selected travelers.",
+      "description": "An individual bill paid during the trip.",
       "type": "object",
       "properties": {
         "tripId": {
@@ -58,6 +58,12 @@
           "maxLength": 50,
           "description": "Name of the traveler who paid the bill."
         },
+        "addedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Name of the traveler who added this entry."
+        },
         "amount": {
           "type": "number",
           "description": "Bill amount in INR (> 0 and <= 10000000)."
@@ -72,7 +78,7 @@
           "type": "string",
           "minLength": 0,
           "maxLength": 180,
-          "description": "Optional manual details or custom reason note."
+          "description": "Optional manual details."
         },
         "splitAmong": {
           "type": "array",
@@ -110,7 +116,7 @@
     },
     "SettlementRecord": {
       "title": "SettlementRecord",
-      "description": "A recorded settlement payment between two travelers to clear trip balances.",
+      "description": "A recorded settlement payment between two travelers.",
       "type": "object",
       "properties": {
         "tripId": {

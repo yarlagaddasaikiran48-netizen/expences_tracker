@@ -37,6 +37,7 @@ export interface Expense {
   id: string;
   tripId: string;
   paidBy: string;
+  addedBy?: string;
   amount: number;
   reason: string;
   note: string;
@@ -64,7 +65,7 @@ export interface PersonSummary {
   fairShare: number;
   settledSent: number;
   settledReceived: number;
-  netBalance: number; // positive => should receive, negative => owes
+  netBalance: number;
   billsPaidCount: number;
   billsInvolvedCount: number;
 }

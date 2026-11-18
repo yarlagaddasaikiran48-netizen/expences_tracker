@@ -45,11 +45,12 @@ service cloud.firestore {
           'splitAmong', 'expenseDate', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'tripId', 'paidBy', 'amount', 'reason', 'note',
+          'tripId', 'paidBy', 'addedBy', 'amount', 'reason', 'note',
           'splitAmong', 'expenseDate', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.tripId) && data.tripId == tripId
         && data.paidBy is string && data.paidBy.size() >= 1 && data.paidBy.size() <= 50
+        && (!('addedBy' in data) || (data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 50))
         && (data.amount is int || data.amount is float) && data.amount > 0 && data.amount <= 10000000
         && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 60
         && data.note is string && data.note.size() <= 180
@@ -119,7 +120,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && parentTripExists(tripId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'paidBy', 'amount', 'reason', 'note', 'splitAmong', 'expenseDate', 'updatedAt'
+            'paidBy', 'addedBy', 'amount', 'reason', 'note', 'splitAmong', 'expenseDate', 'updatedAt'
           ]);
 
         allow delete: if isValidId(tripId) && isValidId(expenseId) && parentTripExists(tripId);
