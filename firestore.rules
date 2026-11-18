@@ -1,0 +1,288 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDateString(d) {
+      return d is string && d.size() == 10 && d.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isBoundedStringList(arr, minLen, maxLen) {
+      return arr is list
+        && arr.size() >= minLen
+        && arr.size() <= maxLen
+        && (arr.size() == 0 || (arr[0] is string && arr[0].size() >= 1 && arr[0].size() <= 128));
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidTrip(data) {
+      return data.keys().hasAll([
+          'name', 'destination', 'ownerId', 'memberUids',
+          'invitedEmails', 'travelers', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'destination', 'ownerId', 'memberUids',
+          'invitedEmails', 'travelers', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 80
+        && isValidId(data.ownerId)
+        && isBoundedStringList(data.memberUids, 1, 20)
+        && data.ownerId in data.memberUids
+        && isBoundedStringList(data.invitedEmails, 0, 20)
+        && isBoundedStringList(data.travelers, 1, 20)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidExpense(data, tripId) {
+      return data.keys().hasAll([
+          'tripId', 'tripOwnerId', 'tripMemberUids', 'authorId',
+          'paidBy', 'amount', 'reason', 'note', 'splitAmong',
+          'expenseDate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'tripId', 'tripOwnerId', 'tripMemberUids', 'authorId',
+          'paidBy', 'amount', 'reason', 'note', 'splitAmong',
+          'expenseDate', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.tripId) && data.tripId == tripId
+        && isValidId(data.tripOwnerId)
+        && isBoundedStringList(data.tripMemberUids, 1, 20)
+        && data.tripOwnerId in data.tripMemberUids
+        && isValidId(data.authorId)
+        && data.paidBy is string && data.paidBy.size() >= 1 && data.paidBy.size() <= 50
+        && (data.amount is int || data.amount is float) && data.amount > 0 && data.amount <= 10000000
+        && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 60
+        && data.note is string && data.note.size() <= 180
+        && isBoundedStringList(data.splitAmong, 1, 20)
+        && isValidDateString(data.expenseDate)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSettlement(data, tripId) {
+      return data.keys().hasAll([
+          'tripId', 'tripOwnerId', 'tripMemberUids', 'authorId',
+          'fromPerson', 'toPerson', 'amount', 'settledDate',
+          'note', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'tripId', 'tripOwnerId', 'tripMemberUids', 'authorId',
+          'fromPerson', 'toPerson', 'amount', 'settledDate',
+          'note', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.tripId) && data.tripId == tripId
+        && isValidId(data.tripOwnerId)
+        && isBoundedStringList(data.tripMemberUids, 1, 20)
+        && data.tripOwnerId in data.tripMemberUids
+        && isValidId(data.authorId)
+        && data.fromPerson is string && data.fromPerson.size() >= 1 && data.fromPerson.size() <= 50
+        && data.toPerson is string && data.toPerson.size() >= 1 && data.toPerson.size() <= 50
+        && data.fromPerson != data.toPerson
+        && (data.amount is int || data.amount is float) && data.amount > 0 && data.amount <= 10000000
+        && isValidDateString(data.settledDate)
+        && data.note is string && data.note.size() <= 120
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Trip Membership Helpers ---
+    function isTripMemberData(tripData) {
+      return isEmailVerified() && (
+        tripData.ownerId == request.auth.uid ||
+        request.auth.uid in tripData.memberUids
+      );
+    }
+
+    function isTripInvitedData(tripData) {
+      return isEmailVerified() &&
+        request.auth.token.email is string &&
+        request.auth.token.email in tripData.invitedEmails;
+    }
+
+    function parentTripExists(tripId) {
+      return exists(/databases/$(database)/documents/trips/$(tripId));
+    }
+
+    function getParentTrip(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)).data;
+    }
+
+    // --- Collection: /trips/{tripId} ---
+    match /trips/{tripId} {
+      allow get: if isValidId(tripId) && (
+        isTripMemberData(existing()) || isTripInvitedData(existing())
+      );
+
+      allow list: if isEmailVerified() && (
+        resource.data.ownerId == request.auth.uid ||
+        request.auth.uid in resource.data.memberUids ||
+        (request.auth.token.email is string && request.auth.token.email in resource.data.invitedEmails)
+      );
+
+      allow create: if isEmailVerified()
+        && isValidId(tripId)
+        && isValidTrip(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isEmailVerified()
+        && isValidId(tripId)
+        && isValidTrip(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Owner updates trip details, travelers, or invited emails
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'destination', 'memberUids', 'invitedEmails', 'travelers', 'updatedAt'
+            ])
+          ) ||
+          // Action 2: Invited user joins the trip (strictly appends only their own UID)
+          (
+            isTripInvitedData(existing()) &&
+            !(request.auth.uid in existing().memberUids) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+            incoming().memberUids.hasAll(existing().memberUids) &&
+            incoming().memberUids.size() == existing().memberUids.size() + 1 &&
+            request.auth.uid in incoming().memberUids
+          )
+        );
+
+      allow delete: if isEmailVerified()
+        && isValidId(tripId)
+        && existing().ownerId == request.auth.uid;
+
+      // --- Subcollection: /trips/{tripId}/expenses/{expenseId} ---
+      match /expenses/{expenseId} {
+        allow get: if isValidId(tripId) && isValidId(expenseId)
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId));
+
+        allow list: if isEmailVerified() && (
+          resource.data.tripOwnerId == request.auth.uid ||
+          request.auth.uid in resource.data.tripMemberUids
+        );
+
+        allow create: if isEmailVerified()
+          && isValidId(tripId)
+          && isValidId(expenseId)
+          && isValidExpense(incoming(), tripId)
+          && incoming().authorId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId))
+          && incoming().tripOwnerId == getParentTrip(tripId).ownerId
+          && incoming().tripMemberUids == getParentTrip(tripId).memberUids;
+
+        allow update: if isEmailVerified()
+          && isValidId(tripId)
+          && isValidId(expenseId)
+          && isValidExpense(incoming(), tripId)
+          && incoming().tripId == existing().tripId
+          && incoming().tripOwnerId == existing().tripOwnerId
+          && incoming().authorId == existing().authorId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId))
+          && (
+            // Action 1: Author or Trip Owner edits expense fields
+            (
+              (existing().authorId == request.auth.uid || getParentTrip(tripId).ownerId == request.auth.uid) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'paidBy', 'amount', 'reason', 'note', 'splitAmong', 'expenseDate', 'updatedAt'
+              ])
+            ) ||
+            // Action 2: Sync tripMemberUids from parent trip
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['tripMemberUids', 'updatedAt']) &&
+              incoming().tripMemberUids == getParentTrip(tripId).memberUids
+            )
+          );
+
+        allow delete: if isEmailVerified()
+          && isValidId(tripId)
+          && isValidId(expenseId)
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId))
+          && (existing().authorId == request.auth.uid || getParentTrip(tripId).ownerId == request.auth.uid);
+      }
+
+      // --- Subcollection: /trips/{tripId}/settlements/{settlementId} ---
+      match /settlements/{settlementId} {
+        allow get: if isValidId(tripId) && isValidId(settlementId)
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId));
+
+        allow list: if isEmailVerified() && (
+          resource.data.tripOwnerId == request.auth.uid ||
+          request.auth.uid in resource.data.tripMemberUids
+        );
+
+        allow create: if isEmailVerified()
+          && isValidId(tripId)
+          && isValidId(settlementId)
+          && isValidSettlement(incoming(), tripId)
+          && incoming().authorId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId))
+          && incoming().tripOwnerId == getParentTrip(tripId).ownerId
+          && incoming().tripMemberUids == getParentTrip(tripId).memberUids;
+
+        allow update: if isEmailVerified()
+          && isValidId(tripId)
+          && isValidId(settlementId)
+          && isValidSettlement(incoming(), tripId)
+          && incoming().tripId == existing().tripId
+          && incoming().tripOwnerId == existing().tripOwnerId
+          && incoming().authorId == existing().authorId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId))
+          && incoming().diff(existing()).affectedKeys().hasOnly(['tripMemberUids', 'updatedAt'])
+          && incoming().tripMemberUids == getParentTrip(tripId).memberUids;
+
+        allow delete: if isEmailVerified()
+          && isValidId(tripId)
+          && isValidId(settlementId)
+          && parentTripExists(tripId)
+          && isTripMemberData(getParentTrip(tripId))
+          && (existing().authorId == request.auth.uid || getParentTrip(tripId).ownerId == request.auth.uid);
+      }
+    }
+  }
+}

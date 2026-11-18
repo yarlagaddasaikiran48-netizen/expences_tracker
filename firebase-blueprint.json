@@ -1,0 +1,238 @@
+{
+  "entities": {
+    "Trip": {
+      "title": "Trip",
+      "description": "A shared group trip expense ledger containing travelers and authorized collaborators.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display name of the trip (e.g. Kerala Trip 2026)."
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Destination of the trip."
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the user who created the trip."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list of collaborator UIDs (max 20)."
+        },
+        "invitedEmails": {
+          "type": "array",
+          "description": "Bounded list of invited collaborator email addresses (max 20)."
+        },
+        "travelers": {
+          "type": "array",
+          "description": "Bounded list of traveler names sharing expenses (max 20)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "name",
+        "destination",
+        "ownerId",
+        "memberUids",
+        "invitedEmails",
+        "travelers",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "An individual bill paid during the trip and split among selected travelers.",
+      "type": "object",
+      "properties": {
+        "tripId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent trip document ID."
+        },
+        "tripOwnerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID copied from parent trip for secure list queries."
+        },
+        "tripMemberUids": {
+          "type": "array",
+          "description": "Bounded list of collaborator UIDs synced from parent trip (max 20)."
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the user who logged the expense."
+        },
+        "paidBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Name of the traveler who paid the bill."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Bill amount in INR (> 0 and <= 10000000)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Expense category/reason selected from the list."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 180,
+          "description": "Optional manual details or custom reason note."
+        },
+        "splitAmong": {
+          "type": "array",
+          "description": "Bounded list of traveler names splitting this expense (1 to 20)."
+        },
+        "expenseDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Date of expense in YYYY-MM-DD format."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "tripId",
+        "tripOwnerId",
+        "tripMemberUids",
+        "authorId",
+        "paidBy",
+        "amount",
+        "reason",
+        "note",
+        "splitAmong",
+        "expenseDate",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SettlementRecord": {
+      "title": "SettlementRecord",
+      "description": "A recorded settlement payment between two travelers to clear trip balances.",
+      "type": "object",
+      "properties": {
+        "tripId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tripOwnerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tripMemberUids": {
+          "type": "array"
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fromPerson": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "toPerson": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "amount": {
+          "type": "number"
+        },
+        "settledDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "tripId",
+        "tripOwnerId",
+        "tripMemberUids",
+        "authorId",
+        "fromPerson",
+        "toPerson",
+        "amount",
+        "settledDate",
+        "note",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/Trip" },
+      "description": "Shared Kerala trip ledger configuration and authorized collaborator list."
+    },
+    "/trips/{tripId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Individual expenses paid during the trip."
+    },
+    "/trips/{tripId}/settlements/{settlementId}": {
+      "schema": { "$ref": "#/entities/SettlementRecord" },
+      "description": "Recorded settlement transfers between travelers."
+    }
+  }
+}
